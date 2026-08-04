@@ -1,0 +1,4 @@
+noise,reconstruction_error_l1,reconstruction_error_gauss_jacobi,reconstruction_error_l1_unsmoothed,order_mae_l1,order_mae_gauss_jacobi,order_mae_l1_unsmoothed
+0.0000,0.0006,0.0008,0.0006,0.0000,0.0000,0.0000
+0.0100,0.0244,0.0251,0.3234,0.0450,0.0450,0.3000
+0.0300,0.0616,0.0653,0.9903,0.1250,0.1250,0.3000

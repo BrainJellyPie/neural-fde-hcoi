@@ -1,0 +1,4 @@
+noise,order_mae,identification_set_covers_truth,identification_set_width,early_time_slope_mae
+0.0000,0.0500,1.0000,0.1000,0.2771
+0.0100,0.0500,1.0000,0.0975,0.2798
+0.0300,0.0450,1.0000,0.1025,0.2392

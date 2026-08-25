@@ -155,7 +155,7 @@ dataset carries the required structure.
   title   = {Identifiability and Deterministic Stable Recovery of the Fractional
              Order in Neural Fractional Differential Equations},
   author  = {Ryu, Donghun and Lee, Minhyeok},
-  journal = {IEEE Access},
+  journal = {TBA},
   year    = {2026}
 }
 ```

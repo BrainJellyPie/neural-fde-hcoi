@@ -15,6 +15,8 @@ from scipy.spatial import cKDTree
 from .caputo import apply_operator, l1_operator, smooth_on_grid
 
 __all__ = [
+    "covers",
+    "grid_search_order",
     "nearest_neighbor_pairs",
     "closest_cross_trajectory_pairs",
     "violation_profile",
@@ -75,7 +77,7 @@ def closest_cross_trajectory_pairs(states: np.ndarray, trajectory_id: np.ndarray
 # --------------------------------------------------------------------------- #
 def violation_profile(orders, labels: dict, states: np.ndarray, pairs: np.ndarray,
                       budget: float, statistic: str = "max",
-                      quantile: float = 0.9):
+                      quantile: float = 0.9, threshold: float = 0.0):
     """Profile of the pairwise violation of the Lipschitz budget.
 
     For each candidate order the violation of a pair is
@@ -90,7 +92,7 @@ def violation_profile(orders, labels: dict, states: np.ndarray, pairs: np.ndarra
     for k, b in enumerate(orders):
         v = labels[b]
         jump = np.linalg.norm(v[pairs[:, 0]] - v[pairs[:, 1]], axis=1)
-        violation = np.clip(jump - budget * gap, 0.0, None)
+        violation = np.clip(jump - budget * gap - threshold, 0.0, None)
         profile[k] = violation.max() if statistic == "max" else np.quantile(
             violation, quantile
         )
@@ -137,8 +139,12 @@ def estimate_order(observations: np.ndarray, t: np.ndarray, orders: np.ndarray,
                    smoothing_strengths=(0.7, 1.0, 1.4),
                    n_closest_pairs: int = 30,
                    quantile: float = 0.9,
+                   threshold: float = 0.0,
+                   n_neighbors: int = 8,
+                   history_separation: float = 0.15,
                    set_tolerance: float = 0.15,
                    abstain_width: float = 0.30,
+                   abstain_residual: float | None = None,
                    variant: str = "consensus"):
     """History-compatible order identification.
 
@@ -153,7 +159,7 @@ def estimate_order(observations: np.ndarray, t: np.ndarray, orders: np.ndarray,
     """
     n_traj = observations.shape[1]
     strengths = smoothing_strengths if variant == "consensus" else (1.0,)
-    profiles = []
+    profiles, residuals, label_scales = [], [], []
     reference = None
     for strength in strengths:
         smoothed = [
@@ -166,29 +172,44 @@ def estimate_order(observations: np.ndarray, t: np.ndarray, orders: np.ndarray,
         if strength == 1.0:
             reference = dict(labels=labels, states=states, trajectory_id=traj_id,
                              times=times)
-        neighbor_pairs = nearest_neighbor_pairs(states, traj_id, times)
-        p = violation_profile(orders, labels, states, neighbor_pairs, budget, "max")
+        label_scales.append(float(np.median(
+            [np.linalg.norm(labels[b], axis=1).mean() for b in orders])))
+        neighbor_pairs = nearest_neighbor_pairs(states, traj_id, times,
+                                                n_neighbors, history_separation)
+        p = violation_profile(orders, labels, states, neighbor_pairs, budget, "max",
+                              threshold=threshold)
         if p is not None:
             profiles.append(rescale(p))
+            residuals.append(float(p.min()))
         if variant == "consensus":
             close_pairs = closest_cross_trajectory_pairs(states, traj_id,
                                                          n_closest_pairs)
             q = violation_profile(orders, labels, states, close_pairs, budget,
-                                  "quantile", quantile)
+                                  "quantile", quantile, threshold=threshold)
             if q is not None:
                 profiles.append(rescale(q))
+                residuals.append(float(q.min()))
 
     if not profiles:
         return dict(order=None, profile=None, width=None, abstained=True,
                     reference=reference)
     combined = np.mean(profiles, axis=0)
     lower, upper, width = identification_set(orders, combined, set_tolerance)
-    abstained = width > abstain_width
-    estimate = None if abstained else float(orders[int(np.argmin(combined))])
-    return dict(order=estimate,
-                argmin=float(orders[int(np.argmin(combined))]),
+    # Feasibility residual: how far the best candidate order is from being
+    # exactly explainable by one autonomous field within the budget, expressed
+    # relative to the scale of the candidate labels so that it is dimensionless.
+    scale = float(np.mean(label_scales)) if label_scales else float("nan")
+    residual = float(np.mean(residuals)) / scale if residuals and scale > 0 else float("nan")
+    if abstain_residual is None:
+        abstained = width > abstain_width
+    else:
+        abstained = bool(width > abstain_width or residual > abstain_residual)
+    argmin = float(orders[int(np.argmin(combined))])
+    return dict(order=None if abstained else argmin,
+                argmin=argmin,
                 profile=combined, lower=lower, upper=upper, width=width,
-                abstained=abstained, reference=reference)
+                residual=residual, abstained=abstained, reference=reference,
+                n_profiles=len(profiles))
 
 
 def early_time_slope(t: np.ndarray, trajectory: np.ndarray, x0: np.ndarray,
@@ -254,3 +275,33 @@ def joint_field_fit(orders, states: np.ndarray, targets: np.ndarray,
         errors.append(float(np.sqrt(np.mean(residual ** 2)) / scale))
         fields.append(all_features @ coef)
     return np.asarray(errors), fields, stacked
+
+
+def covers(result: dict, true_order: float, tolerance: float = 1e-9) -> bool:
+    """Whether the reported identification set contains the true order."""
+    if result.get("lower") is None:
+        return False
+    return bool(result["lower"] - tolerance <= true_order <= result["upper"] + tolerance)
+
+
+def grid_search_order(orders, observations, t, integral_operators, smoothed,
+                      n_restarts: int = 4, seed: int = 0):
+    """Order estimate by direct search over a parametrized linear fractional model.
+
+    At each candidate order the coefficient matrix of a linear Caputo model is
+    obtained in closed form from the Volterra representation, and the order with
+    the smallest trajectory reconstruction error is returned. This is the
+    optimization-based route taken by classical fractional system identification,
+    and it is included as an established comparator.
+    """
+    targets = [x - x[0][None, :] for x in smoothed]
+    scale = float(np.sqrt(np.mean(np.concatenate(targets) ** 2)))
+    errors = []
+    for order in orders:
+        design = np.concatenate([integral_operators[order] @ x for x in smoothed])
+        target = np.concatenate(targets)
+        coef, *_ = np.linalg.lstsq(design, target, rcond=None)
+        residual = target - design @ coef
+        errors.append(float(np.sqrt(np.mean(residual ** 2)) / scale))
+    errors = np.asarray(errors)
+    return float(orders[int(np.argmin(errors))]), errors

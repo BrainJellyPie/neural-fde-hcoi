@@ -39,6 +39,20 @@ python -m experiments.order_range_endpoints
 python -m experiments.recovery_determinants
 ```
 
+The studies added for the second revision write to `results2/` and are run with
+
+```bash
+python -m experiments.reporting_and_scope --output-dir results2
+python -m experiments.uncertainty          --output-dir results2
+python -m experiments.completeness         --output-dir results2
+python -m experiments.joint_training       --output-dir results2
+python  experiments/make_tables.py results2 results2/tables
+```
+
+Each accepts `--quick` for a reduced run. The four studies take about twenty
+minutes in total on a single processor core, of which the joint training takes
+the larger part.
+
 All random seeds are fixed in the experiment scripts, so repeated runs on the same
 machine give identical numbers.
 
@@ -50,6 +64,10 @@ machine give identical numbers.
 | `settings_sensitivity` | How do the regularity budget, the smoothing strength, the sampling density, and the choice of Caputo discretization affect the estimate? | `budget_sensitivity.csv`, `smoothing_sensitivity.csv`, `discretization_comparison.csv`, `wall_clock.csv` |
 | `order_range_endpoints` | Is ordinary dynamics reported as ordinary, and does the reported range still cover a true order near zero? | `integer_order_boundary.csv`, `near_zero_endpoint.csv` |
 | `recovery_determinants` | Does fitting the order and the field together determine the order, and what governs recovery as the state dimension grows? | `joint_fitting.csv`, `effective_dimension.csv`, `figure_joint_fitting.pdf`, `figure_effective_dimension.pdf` |
+| `reporting_and_scope` | How often does the procedure answer, how accurate is it when it does, and what happens outside the assumed model class? | `reporting_behavior.csv`, `abstention_thresholds.csv`, `misspecification.csv`, `budget_study.csv` |
+| `uncertainty` | Do the estimator comparisons survive the replication spread? | `paired_joint_fitting.csv`, `linear_uncertainty.csv`, `discretization_uncertainty.csv`, `boundary_uncertainty.csv` |
+| `completeness` | What do the error threshold, the fixed settings, and the fitting range do to the result? | `threshold_study.csv`, `settings_sensitivity.csv`, `stage_timing.csv`, `dimension_range_sensitivity.csv` |
+| `joint_training` | Does an end-to-end trained Neural FDE recover the order? | `joint_training.csv`, `joint_training_runs.csv` |
 
 ## Library layout
 
@@ -137,7 +155,7 @@ dataset carries the required structure.
   title   = {Identifiability and Deterministic Stable Recovery of the Fractional
              Order in Neural Fractional Differential Equations},
   author  = {Ryu, Donghun and Lee, Minhyeok},
-  journal = {TBA},
+  journal = {IEEE Access},
   year    = {2026}
 }
 ```

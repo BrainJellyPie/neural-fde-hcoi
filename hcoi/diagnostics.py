@@ -92,5 +92,11 @@ def effective_dimension(distances_by_count: dict) -> dict:
     counts = np.array(sorted(distances_by_count))
     values = np.array([distances_by_count[c] for c in counts])
     slope = float(np.polyfit(np.log(counts), np.log(values), 1)[0])
+    # D = 1 - 1/slope inverts the scaling law. The inversion is ill-conditioned
+    # as the slope approaches zero, which happens when the overlap distance
+    # barely responds to adding trajectories, so the slope is reported alongside
+    # the dimension and the conversion is marked unreliable in that regime.
+    reliable = slope < -0.05
+    dimension = float(1.0 - 1.0 / slope) if reliable else float("nan")
     return dict(counts=counts.tolist(), distances=values.tolist(), slope=slope,
-                dimension=float(1.0 - 1.0 / slope))
+                dimension=dimension, reliable=bool(reliable))
